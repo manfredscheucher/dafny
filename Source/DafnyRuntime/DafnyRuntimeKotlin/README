@@ -1,0 +1,23 @@
+Dafny Kotlin Runtime
+
+Runtime support for Dafny programs compiled to Kotlin. This is a Kotlin
+Multiplatform (KMP) Gradle module, not a single file:
+
+  src/commonMain/kotlin/dafny/   core runtime (sequences, sets, maps, multisets,
+                                 tuples, function types, BigRational, code points,
+                                 type descriptors) shared by all platforms
+  src/jvmMain/                   JVM actuals (dafny.BigInteger over java.math)
+  src/jsMain/, nativeMain/,      non-JVM actuals (exit; BigInteger via the
+  nonJvmMain/                    ionspin multiplatform-bignum library)
+
+The `kt`/`kmp` backends embed this source into the generated project.
+
+To build the JVM runtime jar:
+
+  $ gradle jvmJar
+
+To run on the multiplatform targets (from an assembled `dafny build -t kmp`
+project):
+
+  $ gradle jsNodeRun                        # JS / Node
+  $ gradle runReleaseExecutableMacosArm64   # Native (host-dependent task name)

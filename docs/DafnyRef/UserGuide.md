@@ -1933,7 +1933,24 @@ implementation.
 - The current backend also assumes the use of C++17 in order to cleanly and
   performantly implement datatypes.
 
-### 13.8.10. Supported features by target language {#sec-supported-features-by-target-language}
+### 13.8.10. Kotlin
+
+The Kotlin backends are experimental. They emit native Kotlin source so the same
+program can target the JVM as well as the other Kotlin Multiplatform (KMP)
+platforms. Three related targets are provided: `kt` (Kotlin on the JVM), `kmp`
+(a Kotlin Multiplatform Gradle project for JVM/JS/Native), and `jvm-ionspin` (a
+JVM artifact whose `BigInteger` uses the ionspin multiplatform-bignum library
+instead of `java.math.BigInteger`):
+
+- `dafny translate kt A.dfy --unicode-char:false`
+- `dafny build -t:kt A.dfy --unicode-char:false`
+
+Dafny's unbounded `int` maps to `dafny.BigInteger`: `java.math.BigInteger` on the
+JVM, and the ionspin multiplatform-bignum library on JS/Native. Details, the
+runtime layout, and how bignum is handled across platforms are in
+[this separate document](integration-kotlin/IntegrationKotlin).
+
+### 13.8.11. Supported features by target language {#sec-supported-features-by-target-language}
 
 Some Dafny features are not supported by every target language.
 The table below shows which features are supported by each backend.

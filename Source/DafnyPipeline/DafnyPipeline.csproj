@@ -25,6 +25,81 @@
     <ProjectReference Include="..\DafnyCore\DafnyCore.csproj" />
   </ItemGroup>
 
+  <!--
+  Build the Kotlin runtime into a self-contained jar (including the Kotlin stdlib via
+  -include-runtime) so it can be embedded as a resource, extracted at compile time and used
+  on the classpath for compiling/running generated Kotlin code.
+  This mirrors how DafnyRuntime.jar is produced for the Java backend, but uses kotlinc
+  directly because there is no full Gradle project checked in for this source subset.
+  Requires `kotlinc` to be on PATH at build time. If you need to regenerate the jar manually:
+    kotlinc Source/DafnyRuntime/DafnyRuntimeKotlin/src/main/kotlin/dafny/*.kt \
+      -include-runtime -d Source/DafnyRuntime/DafnyRuntimeKotlin/build/libs/DafnyRuntimeKotlin.jar
+  -->
+  <PropertyGroup>
+    <DafnyRuntimeKotlinJar>..\DafnyRuntime\DafnyRuntimeKotlin\build\libs\DafnyRuntimeKotlin.jar</DafnyRuntimeKotlinJar>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- KMP module: java-free commonMain plus the JVM actual (jvmMain, dafny.BigInteger
+         over java.math). For the embedded JVM runtime jar we compile both source sets. -->
+    <DafnyRuntimeKotlinInputFile Include="..\DafnyRuntime\DafnyRuntimeKotlin\src\commonMain\kotlin\dafny\*.kt" />
+    <DafnyRuntimeKotlinInputFile Include="..\DafnyRuntime\DafnyRuntimeKotlin\src\commonMain\kotlin\_System\*.kt" />
+    <DafnyRuntimeKotlinInputFile Include="..\DafnyRuntime\DafnyRuntimeKotlin\src\jvmMain\kotlin\dafny\*.kt" />
+    <DafnyRuntimeKotlinInputFile Include="..\DafnyRuntime\DafnyRuntimeKotlin\src\jvmMain\kotlin\_System\*.kt" />
+  </ItemGroup>
+  <Target Name="BuildDafnyRuntimeKotlinJar" BeforeTargets="BeforeBuild;PrepareForBuild"
+          Inputs="@(DafnyRuntimeKotlinInputFile)" Outputs="$(DafnyRuntimeKotlinJar)">
+    <Message Text="Compiling DafnyRuntimeKotlin to $(DafnyRuntimeKotlinJar)..." Importance="high" />
+    <MakeDir Directories="..\DafnyRuntime\DafnyRuntimeKotlin\build\libs" />
+    <PropertyGroup>
+      <DafnyRuntimeKotlinSources>@(DafnyRuntimeKotlinInputFile->'&quot;%(FullPath)&quot;', ' ')</DafnyRuntimeKotlinSources>
+    </PropertyGroup>
+    <!-- expect/actual needs the Kotlin Multiplatform compilation model, which flat kotlinc
+         doesn't provide, so build the JVM runtime jar via the module's Gradle build and copy
+         it to the embedded location. -->
+    <Exec Command="gradle -q jvmJar" WorkingDirectory="..\DafnyRuntime\DafnyRuntimeKotlin"
+          Condition="'@(DafnyRuntimeKotlinInputFile)' != ''" />
+    <Copy SourceFiles="..\DafnyRuntime\DafnyRuntimeKotlin\build\libs\DafnyRuntimeKotlin-jvm-1.0.jar"
+          DestinationFiles="$(DafnyRuntimeKotlinJar)"
+          Condition="'@(DafnyRuntimeKotlinInputFile)' != ''" />
+    <ItemGroup>
+      <FileWrites Include="$(DafnyRuntimeKotlinJar)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Zip the full Kotlin Multiplatform runtime SOURCE tree (commonMain + jvmMain + nonJvmMain
+       + jsMain + nativeMain, plus build.gradle.kts / settings.gradle.kts) so the kmp target
+       backend can unpack it into a generated Gradle project and build for jvm/js/native. Unlike
+       the embedded JVM jar (JVM-only), KMP needs the sources to compile each platform's actual. -->
+  <PropertyGroup>
+    <DafnyRuntimeKotlinModule>..\DafnyRuntime\DafnyRuntimeKotlin</DafnyRuntimeKotlinModule>
+    <DafnyRuntimeKotlinSourcesZip>$(IntermediateOutputPath)DafnyRuntimeKotlinSources.zip</DafnyRuntimeKotlinSourcesZip>
+  </PropertyGroup>
+  <ItemGroup>
+    <DafnyRuntimeKotlinSrcFile Include="$(DafnyRuntimeKotlinModule)\src\**\*.kt" />
+    <DafnyRuntimeKotlinGradleFile Include="$(DafnyRuntimeKotlinModule)\build.gradle.kts" />
+    <DafnyRuntimeKotlinGradleFile Include="$(DafnyRuntimeKotlinModule)\settings.gradle.kts" />
+  </ItemGroup>
+  <Target Name="ZipDafnyRuntimeKotlinSources" BeforeTargets="BeforeBuild;PrepareForBuild"
+          Inputs="@(DafnyRuntimeKotlinSrcFile);@(DafnyRuntimeKotlinGradleFile)" Outputs="$(DafnyRuntimeKotlinSourcesZip)">
+    <PropertyGroup>
+      <KmpStageDir>$(IntermediateOutputPath)kmp-runtime-src\</KmpStageDir>
+    </PropertyGroup>
+    <RemoveDir Directories="$(KmpStageDir)" />
+    <MakeDir Directories="$(KmpStageDir)" />
+    <!-- Stage only the source tree + gradle files (NOT build/), preserving relative paths. -->
+    <Copy SourceFiles="@(DafnyRuntimeKotlinSrcFile)"
+          DestinationFiles="@(DafnyRuntimeKotlinSrcFile->'$(KmpStageDir)src\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(DafnyRuntimeKotlinGradleFile)"
+          DestinationFolder="$(KmpStageDir)" />
+    <Delete Files="$(DafnyRuntimeKotlinSourcesZip)" />
+    <ZipDirectory SourceDirectory="$(KmpStageDir)"
+                  DestinationFile="$(DafnyRuntimeKotlinSourcesZip)"
+                  Overwrite="true" />
+    <ItemGroup>
+      <FileWrites Include="$(DafnyRuntimeKotlinSourcesZip)" />
+    </ItemGroup>
+  </Target>
+
   <!-- 
   Note that the CopyToOutputDirectory elements are important to ensure the runtime files
   appear in the zip file distribution created by package.py.
@@ -92,6 +167,18 @@
     <EmbeddedResource Include="..\DafnyRuntime\DafnyRuntimeJava\build\libs\DafnyRuntime-4.11.1.jar">
       <LogicalName>DafnyRuntime.jar</LogicalName>
       <Link>DafnyRuntime.jar</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DafnyRuntime\DafnyRuntimeKotlin\build\libs\DafnyRuntimeKotlin.jar">
+      <LogicalName>DafnyRuntimeKotlin.jar</LogicalName>
+      <Link>DafnyRuntimeKotlin.jar</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <!-- The full KMP runtime source tree (zipped by ZipDafnyRuntimeKotlinSources), used by
+         the kmp target backend to build for jvm/js/native. -->
+    <EmbeddedResource Include="$(DafnyRuntimeKotlinSourcesZip)">
+      <LogicalName>DafnyRuntimeKotlinSources.zip</LogicalName>
+      <Link>DafnyRuntimeKotlinSources.zip</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </EmbeddedResource>
     <EmbeddedResource Include="..\DafnyRuntime\DafnyRuntime.cs">

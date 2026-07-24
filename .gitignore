@@ -92,3 +92,12 @@ Source/IntegrationTests/TestFiles/LitTests/LitTest/**/*.csproj
 /Source/DafnyCore/Prelude/Sequences.bpl
 /venv
 /Source/DafnyCore/Prelude/Output
+
+# Kotlin backend build artifacts
+/Source/DafnyRuntime/DafnyRuntimeKotlin/build/
+
+# Kotlin/JS yarn lockfile store (generated)
+Source/DafnyRuntime/DafnyRuntimeKotlin/kotlin-js-store/
+
+# Generated KMP runtime source bundle (built into obj/ by DafnyPipeline)
+Source/DafnyPipeline/DafnyRuntimeKotlinSources.zip
