@@ -2045,7 +2045,13 @@ namespace Microsoft.Dafny.Compilers {
       // --- After
       // do the truncation, if needed
       if (nativeType == null) {
-        wr.Write($").and((dafny.BigInteger.ONE.shiftLeft({bvType.Width})).subtract(dafny.BigInteger.ONE)))");
+        // Wrap to the bv width via `x mod 2^width` rather than `x and (2^width - 1)`.
+        // The two are equal for two's-complement (java.math, used by kt/kmp-jvm), but
+        // the ionspin bignum (jvm-ionspin / non-JVM KMP) is sign-magnitude and its
+        // bitwise `and` on a negative operand is not two's-complement, so masking a
+        // transient-negative result (e.g. `0 - 1` on bv100, or BVNot) gave the wrong
+        // value. `mod` returns the non-negative residue in [0, 2^width) on both.
+        wr.Write($").mod(dafny.BigInteger.ONE.shiftLeft({bvType.Width})))");
       } else if (bvType.Width < nativeType.Bitwidth) {
         // print the mask in hex, because that looks nice. Kotlin's `and` is only defined on
         // Int/Long, so for Byte/Short operands do the mask in Int space, then truncate back.
@@ -3082,8 +3088,15 @@ namespace Microsoft.Dafny.Compilers {
             TrParenExpr("", expr, wr, inLetExprBody, wStmts);
             wr.Write(small ? ".toInt().inv()" : ".inv()");
           } else {
+            // Wide bv (dafny.BigInteger): emit BVNot as `(2^width - 1) - x` instead of
+            // `x.not()`. It's two's-complement-identical for x in [0, 2^width), always
+            // non-negative, and avoids the ionspin bignum whose `not()` throws (its
+            // sign-magnitude not() isn't defined the java.math way). The surrounding
+            // EmitBitvectorTruncation still wraps, but the value is already in range.
+            var bvWidth = expr.Type.NormalizeToAncestorType().AsBitVectorType.Width;
+            wr.Write($"((dafny.BigInteger.ONE.shiftLeft({bvWidth})).subtract(dafny.BigInteger.ONE)).subtract(");
             TrParenExpr("", expr, wr, inLetExprBody, wStmts);
-            wr.Write(".not()");
+            wr.Write(")");
           }
           break;
         case ResolvedUnaryOp.Cardinality: {
@@ -3255,11 +3268,14 @@ namespace Microsoft.Dafny.Compilers {
         case BinaryExpr.ResolvedOpcode.LeftShift:
           doPossiblyNativeBinOp("<<", "shiftLeft", out preOpString, out opString, out postOpString, out callString, out staticCallString);
           truncateResult = true;
-          convertE1_to_int = AsNativeType(e1Type) == null;
+          // For a bv65+ base (dafny.BigInteger), shiftLeft takes an Int. A native
+          // e1 would emit as Byte/Short, and Kotlin has no implicit widening, so
+          // convert the shift amount to Int whenever the base is non-native too.
+          convertE1_to_int = AsNativeType(e1Type) == null || AsNativeType(resultType) == null;
           break;
         case BinaryExpr.ResolvedOpcode.RightShift:
           doPossiblyNativeBinOp(">>>", "shiftRight", out preOpString, out opString, out postOpString, out callString, out staticCallString);
-          convertE1_to_int = AsNativeType(e1Type) == null;
+          convertE1_to_int = AsNativeType(e1Type) == null || AsNativeType(resultType) == null;
           break;
         case BinaryExpr.ResolvedOpcode.Add:
           truncateResult = true;
