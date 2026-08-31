@@ -3088,15 +3088,13 @@ namespace Microsoft.Dafny.Compilers {
             TrParenExpr("", expr, wr, inLetExprBody, wStmts);
             wr.Write(small ? ".toInt().inv()" : ".inv()");
           } else {
-            // Wide bv (dafny.BigInteger): emit BVNot as `(2^width - 1) - x` instead of
-            // `x.not()`. It's two's-complement-identical for x in [0, 2^width), always
-            // non-negative, and avoids the ionspin bignum whose `not()` throws (its
-            // sign-magnitude not() isn't defined the java.math way). The surrounding
-            // EmitBitvectorTruncation still wraps, but the value is already in range.
-            var bvWidth = expr.Type.NormalizeToAncestorType().AsBitVectorType.Width;
-            wr.Write($"((dafny.BigInteger.ONE.shiftLeft({bvWidth})).subtract(dafny.BigInteger.ONE)).subtract(");
+            // Wide bv (dafny.BigInteger): emit BVNot as `-x - 1`, the two's-complement
+            // complement, and let the surrounding EmitBitvectorTruncation do the width
+            // wrap (mod 2^width brings the negative back to (2^width-1)-x). We can't use
+            // ionspin's `.not()` (it throws on the sign-magnitude bignum), and spelling
+            // the mask here would duplicate the wrap the truncation already applies.
             TrParenExpr("", expr, wr, inLetExprBody, wStmts);
-            wr.Write(")");
+            wr.Write(".negate().subtract(dafny.BigInteger.ONE)");
           }
           break;
         case ResolvedUnaryOp.Cardinality: {
